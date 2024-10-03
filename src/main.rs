@@ -1,4 +1,5 @@
 use anyhow::Context;
+use async_std::net::TcpListener;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
 use bytes::BytesMut;
@@ -54,21 +55,8 @@ struct ListenArgs {
     socket: String,
 }
 
-async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
-    let can_socket = CanSocket::open(&cmd.interface)
-        .with_context(|| format!("CAN interface: {}", cmd.interface))?;
-
-    let addrs: Vec<SocketAddr> = cmd
-        .dest
-        .to_socket_addrs()
-        .expect("unable to resolve domain")
-        .collect();
-
-    debug!("dest resolves to: {:?}", addrs);
-    let socket = addrs[0];
-    info!("sending to {}", socket);
-
-    let tcp_stream = TcpStream::connect(socket).await?;
+async fn pump_frames(tcp_stream: TcpStream, can_socket: &CanSocket) -> anyhow::Result<()>
+{
     let (mut tcp_read, mut tcp_write) = tcp_stream.split();
     let mut tcp_read_buf = BytesMut::with_capacity(1024);
 
@@ -108,6 +96,26 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
         }
     }
 
+}
+
+async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
+    let can_socket = CanSocket::open(&cmd.interface)
+        .with_context(|| format!("CAN interface: {}", cmd.interface))?;
+
+    let addrs: Vec<SocketAddr> = cmd
+        .dest
+        .to_socket_addrs()
+        .expect("unable to resolve domain")
+        .collect();
+
+    debug!("dest resolves to: {:?}", addrs);
+    let socket = addrs[0];
+    info!("sending to {}", socket);
+
+    let tcp_stream = TcpStream::connect(socket).await?;
+    info!("connected!");
+    pump_frames(tcp_stream, &can_socket).await?;
+
     Ok(())
 }
 
@@ -144,9 +152,14 @@ async fn listen(cmd: ListenArgs) -> anyhow::Result<()>
         }
     };
 
+    let tcp_listener = TcpListener::bind(&cmd.socket).await?;
+    info!("listening on: {}", cmd.socket);
+    loop {
+        let (tcp_stream, addr) = tcp_listener.accept().await?;
+        info!("incoming connection from: {}", addr);
 
-
-
+        pump_frames(tcp_stream, &can_socket).await?;
+    }
 
     Ok(())
 }
