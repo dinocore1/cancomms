@@ -1,20 +1,18 @@
 use anyhow::Context;
-use clap::{Parser, Subcommand, Args};
-use std::net::{SocketAddr, ToSocketAddrs};
-use tracing::{debug, info, error};
-use socketcan::{async_std::CanSocket, CanFrame};
-use futures::prelude::*;
-use futures::pin_mut;
-use async_std::prelude::*;
 use async_std::net::TcpStream;
+use async_std::prelude::*;
+use clap::{Args, Parser, Subcommand};
+use futures::pin_mut;
+use futures::prelude::*;
+use socketcan::{async_std::CanSocket, CanFrame};
+use std::net::{SocketAddr, ToSocketAddrs};
+use tracing::{debug, error, info};
 
 mod frame;
-
 
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
-
     /// verbose logging
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
@@ -25,20 +23,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-
     /// Forward CAN messages from local interface and steam over TCP connection
     Forward(ForwardCmd),
 
-
     /// Listen for incoming TCP connection
     Listen {
-
         /// listen socket
         #[arg(short, long, default_value = "0.0.0.0:10023")]
         socket: String,
-
-    }
-
+    },
 }
 
 #[derive(Args)]
@@ -50,13 +43,13 @@ struct ForwardCmd {
     dest: String,
 }
 
-async fn forward(cmd: ForwardCmd) -> anyhow::Result<()>
-{
+async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
     let can_socket = CanSocket::open(&cmd.interface)
         .with_context(|| format!("CAN interface: {}", cmd.interface))?;
 
-
-    let addrs: Vec<SocketAddr> = cmd.dest.to_socket_addrs()
+    let addrs: Vec<SocketAddr> = cmd
+        .dest
+        .to_socket_addrs()
         .expect("unable to resolve domain")
         .collect();
 
@@ -64,10 +57,9 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()>
     let socket = addrs[0];
     info!("sending to {}", socket);
 
-    let mut tcp_stream = TcpStream::connect(socket).await?;
+    let tcp_stream = TcpStream::connect(socket).await?;
 
     loop {
-
         let can_rx = can_socket.read_frame().fuse();
         pin_mut!(can_rx);
 
@@ -80,13 +72,13 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()>
 
                         match f {
                             CanFrame::Data(d) => {
-                                
+
                             },
 
                             CanFrame::Error(e) => error!("{}", e.into_error()),
                             _ => {}
                         };
-                        
+
                     }
                     Err(e) => {
                         error!("CAN io error: {}", e);

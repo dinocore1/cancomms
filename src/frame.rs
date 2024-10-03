@@ -1,18 +1,16 @@
 use std::io::Cursor;
 use std::io::Read;
 
+use async_std::io::prelude::*;
+use async_std::net::TcpStream;
 use async_std::prelude::*;
 use bytes::Buf;
-use bytes::BufMut;
 use bytes::BytesMut;
+use libc::CAN_MAX_DLEN;
 use socketcan::frame::IdFlags;
+use socketcan::CanFrame;
 use socketcan::EmbeddedFrame;
 use socketcan::Frame;
-use tracing::{debug, info, error};
-use async_std::net::TcpStream;
-use socketcan::{frame::AsPtr, CanFrame};
-use async_std::io::prelude::*;
-use libc::{can_frame, CAN_MAX_DLEN};
 
 const FRAME_SIZE: usize = 4 + 1 + CAN_MAX_DLEN;
 
@@ -22,7 +20,6 @@ pub struct Connection {
 }
 
 impl Connection {
-
     pub fn new(stream: TcpStream) -> Self {
         Self {
             stream,
@@ -30,8 +27,7 @@ impl Connection {
         }
     }
 
-    pub async fn read_frame(&mut self) -> async_std::io::Result<Option<CanFrame>>
-    {
+    pub async fn read_frame(&mut self) -> async_std::io::Result<Option<CanFrame>> {
         loop {
             if let Some(frame) = parse_frame(&mut self.buffer)? {
                 return Ok(Some(frame));
@@ -45,7 +41,10 @@ impl Connection {
                 if self.buffer.is_empty() {
                     return Ok(None);
                 } else {
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "connection reset by peer"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "connection reset by peer",
+                    ));
                 }
             }
         }
@@ -56,10 +55,13 @@ impl Connection {
     }
 }
 
-async fn write_frame<'a, W>(stream: &'a mut W, frame: impl socketcan::Frame) -> async_std::io::Result<()>
-where W: Write + Unpin
+async fn write_frame<'a, W>(
+    stream: &'a mut W,
+    frame: impl socketcan::Frame,
+) -> async_std::io::Result<()>
+where
+    W: Write + Unpin,
 {
-
     let data = frame.data();
     let len = data.len() as u8;
     stream.write_all(&[len]).await?;
@@ -70,11 +72,9 @@ where W: Write + Unpin
 }
 
 fn parse_frame(buf: &mut BytesMut) -> async_std::io::Result<Option<CanFrame>> {
-
     let mut c = Cursor::new(&buf[..]);
     if check_frame(&mut c) {
-
-        let mut data = [0_u8 ; CAN_MAX_DLEN];
+        let mut data = [0_u8; CAN_MAX_DLEN];
 
         c.set_position(0);
 
@@ -125,6 +125,20 @@ mod test {
         let r = r.unwrap();
         assert!(r.is_some());
         let r = r.unwrap();
-        assert_eq!(r.id(), socketcan::Id::Standard(StandardId::new(10).unwrap()));
+        assert_eq!(
+            r.id(),
+            socketcan::Id::Standard(StandardId::new(10).unwrap())
+        );
+    }
+
+    #[test]
+    fn parse_advances_buf() {
+        let b = [3_u8, 1_u8, 2_u8, 3_u8, 0_u8, 0_u8, 0_u8, 10_u8, 4_u8];
+        let mut buf = BytesMut::from(&b[..]);
+        let _r = parse_frame(&mut buf);
+        assert_eq!(buf.remaining(), 1);
+        let r = parse_frame(&mut buf);
+        assert!(r.is_ok());
+        assert!(r.unwrap().is_none());
     }
 }
