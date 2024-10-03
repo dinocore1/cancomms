@@ -2,17 +2,12 @@ use std::io::Cursor;
 use std::io::Read;
 
 use async_std::io::prelude::*;
-use async_std::net::TcpStream;
-use async_std::prelude::*;
 use bytes::Buf;
 use bytes::BytesMut;
 use libc::CAN_MAX_DLEN;
 use socketcan::frame::IdFlags;
 use socketcan::CanFrame;
-use socketcan::EmbeddedFrame;
 use socketcan::Frame;
-
-const FRAME_SIZE: usize = 4 + 1 + CAN_MAX_DLEN;
 
 pub async fn read_frame<R>(
     buf: &mut BytesMut,

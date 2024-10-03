@@ -5,7 +5,8 @@ use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
 use futures::pin_mut;
 use futures::prelude::*;
-use socketcan::{async_std::CanSocket, CanFrame};
+use socketcan::async_std::CanSocket;
+use socketcan::{Frame, EmbeddedFrame};
 use std::net::{SocketAddr, ToSocketAddrs};
 use tracing::{debug, error, info};
 
@@ -37,7 +38,8 @@ enum Commands {
 
 #[derive(Args)]
 struct ForwardCmd {
-    /// CAN interface. i.e. can0
+    /// CAN interface.
+    #[arg(short, long, default_value = "can0")]
     interface: String,
 
     /// host:port to stream to. i.e. 192.168.2.10:1234
@@ -71,7 +73,7 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
             f = can_rx => {
                 match f {
                     Ok(f) => {
-                        debug!("CAN received: {:?}", f);
+                        debug!("CAN => TCP [{:x}]", f.id_word());
                         if let Err(e) = frame::write_frame(&mut tcp_write, f).await {
                             error!("error sending to TCP: {}", e);
                         }
@@ -86,7 +88,7 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
             f = tcp_rx => {
                 match f {
                     Ok(Some(f)) => {
-                        debug!("Sending CAN frame: {:?}", f);
+                        debug!("TCP => CAN [{:x}]", f.id_word());
                         if let Err(e) = can_socket.write_frame(&f).await {
                             error!("error sending frame: {}", e);
                         }
@@ -94,7 +96,6 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
 
                     _ => todo!()
                 }
-
             }
         }
     }
