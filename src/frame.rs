@@ -14,53 +14,41 @@ use socketcan::Frame;
 
 const FRAME_SIZE: usize = 4 + 1 + CAN_MAX_DLEN;
 
-pub struct Connection {
-    stream: TcpStream,
-    buffer: BytesMut,
-}
-
-impl Connection {
-    pub fn new(stream: TcpStream) -> Self {
-        Self {
-            stream,
-            buffer: BytesMut::with_capacity(1024),
+pub async fn read_frame<R>(
+    buf: &mut BytesMut,
+    stream: &mut R,
+) -> async_std::io::Result<Option<CanFrame>>
+where
+    R: futures::AsyncRead + Unpin,
+{
+    loop {
+        if let Some(frame) = parse_frame(buf)? {
+            return Ok(Some(frame));
         }
-    }
 
-    pub async fn read_frame(&mut self) -> async_std::io::Result<Option<CanFrame>> {
-        loop {
-            if let Some(frame) = parse_frame(&mut self.buffer)? {
-                return Ok(Some(frame));
-            }
-
-            if 0 == self.stream.read(&mut self.buffer).await? {
-                // The remote closed the connection. For this to be
-                // a clean shutdown, there should be no data in the
-                // read buffer. If there is, this means that the
-                // peer closed the socket while sending a frame.
-                if self.buffer.is_empty() {
-                    return Ok(None);
-                } else {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "connection reset by peer",
-                    ));
-                }
+        if 0 == stream.read(buf).await? {
+            // The remote closed the connection. For this to be
+            // a clean shutdown, there should be no data in the
+            // read buffer. If there is, this means that the
+            // peer closed the socket while sending a frame.
+            if buf.is_empty() {
+                return Ok(None);
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "connection reset by peer",
+                ));
             }
         }
     }
-
-    pub async fn write_frame(&mut self, frame: CanFrame) -> async_std::io::Result<()> {
-        write_frame(&mut self.stream, frame).await
-    }
 }
 
-async fn write_frame<'a, W>(
-    stream: &'a mut W,
+pub async fn write_frame<W>(
+    stream: &mut W,
     frame: impl socketcan::Frame,
 ) -> async_std::io::Result<()>
 where
-    W: Write + Unpin,
+    W: futures::AsyncWrite + Unpin,
 {
     let data = frame.data();
     let len = data.len() as u8;

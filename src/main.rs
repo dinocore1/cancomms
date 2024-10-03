@@ -1,6 +1,7 @@
 use anyhow::Context;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
+use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
 use futures::pin_mut;
 use futures::prelude::*;
@@ -58,32 +59,42 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
     info!("sending to {}", socket);
 
     let tcp_stream = TcpStream::connect(socket).await?;
+    let (mut tcp_read, mut tcp_write) = tcp_stream.split();
+    let mut tcp_read_buf = BytesMut::with_capacity(1024);
 
     loop {
         let can_rx = can_socket.read_frame().fuse();
-        pin_mut!(can_rx);
+        let tcp_rx = frame::read_frame(&mut tcp_read_buf, &mut tcp_read).fuse();
+        pin_mut!(can_rx, tcp_rx);
 
         futures::select! {
             f = can_rx => {
                 match f {
                     Ok(f) => {
                         debug!("CAN received: {:?}", f);
-
-
-                        match f {
-                            CanFrame::Data(d) => {
-
-                            },
-
-                            CanFrame::Error(e) => error!("{}", e.into_error()),
-                            _ => {}
-                        };
+                        if let Err(e) = frame::write_frame(&mut tcp_write, f).await {
+                            error!("error sending to TCP: {}", e);
+                        }
 
                     }
                     Err(e) => {
                         error!("CAN io error: {}", e);
                     }
                 }
+            },
+
+            f = tcp_rx => {
+                match f {
+                    Ok(Some(f)) => {
+                        debug!("Sending CAN frame: {:?}", f);
+                        if let Err(e) = can_socket.write_frame(&f).await {
+                            error!("error sending frame: {}", e);
+                        }
+                    },
+
+                    _ => todo!()
+                }
+
             }
         }
     }
