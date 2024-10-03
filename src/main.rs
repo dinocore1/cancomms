@@ -29,11 +29,7 @@ enum Commands {
     Forward(ForwardCmd),
 
     /// Listen for incoming TCP connection
-    Listen {
-        /// listen socket
-        #[arg(short, long, default_value = "0.0.0.0:10023")]
-        socket: String,
-    },
+    Listen(ListenArgs),
 }
 
 #[derive(Args)]
@@ -44,6 +40,18 @@ struct ForwardCmd {
 
     /// host:port to stream to. i.e. 192.168.2.10:1234
     dest: String,
+}
+
+#[derive(Args)]
+struct ListenArgs {
+
+    /// CAN interface
+    #[arg(short, long, default_value = "vcan0")]
+    interface: String,
+
+    /// listen socket
+    #[arg(short, long, default_value = "0.0.0.0:10023")]
+    socket: String,
 }
 
 async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
@@ -103,6 +111,46 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn create_vcan(name: &str) -> anyhow::Result<()>
+{
+    std::process::Command::new("ip")
+        .arg("link")
+        .arg("add")
+        .arg("dev")
+        .arg(name)
+        .arg("type")
+        .arg("vcan")
+        .output()?;
+
+    std::process::Command::new("ip")
+        .arg("link")
+        .arg("set")
+        .arg(name)
+        .arg("up")
+        .output()?;
+
+    Ok(())
+}
+
+async fn listen(cmd: ListenArgs) -> anyhow::Result<()>
+{
+
+    let can_socket = match CanSocket::open(&cmd.interface) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("unable to open CAN socket: {}: {}", cmd.interface, e);
+            create_vcan(&cmd.interface)?;
+            CanSocket::open(&cmd.interface)?
+        }
+    };
+
+
+
+
+
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -120,12 +168,8 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Forward(cmd) => async_std::task::block_on(forward(cmd))?,
 
-        Commands::Listen { socket } => {
-            todo!()
-        }
+        Commands::Listen(cmd) => async_std::task::block_on(listen(cmd))?,
     }
-
-    println!("Hello, world!");
 
     Ok(())
 }
