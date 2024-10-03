@@ -90,7 +90,16 @@ async fn pump_frames(tcp_stream: TcpStream, can_socket: &CanSocket) -> anyhow::R
                         }
                     },
 
-                    _ => todo!()
+                    Ok(None) => {
+                        info!("remote peer closed connection");
+                        return Ok(());
+                    }
+
+                    Err(e) => {
+                        error!("TCP error: {}", e);
+                        return Err(e.into());
+                    }
+
                 }
             }
         }
