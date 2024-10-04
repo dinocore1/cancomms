@@ -118,6 +118,7 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
 }
 
 fn create_vcan(name: &str) -> anyhow::Result<()> {
+    info!("try creating a new vcan interface with: \n$ link add dev {name}\n$ link set {name} up");
     std::process::Command::new("ip")
         .arg("link")
         .arg("add")

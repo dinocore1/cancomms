@@ -122,10 +122,10 @@ mod test {
         let data = [64_u8, 0_u8, 0_u8, 10_u8, 3_u8, 1_u8, 2_u8, 3_u8];
         let mut src = BytesMut::from(&data[..]);
         let mut decoder = CanFrameCodec;
-        let r = decoder.decode(&mut src);
-        assert!(r.is_ok());
-        let r = r.unwrap().unwrap();
-        let CanFrame::Remote(r) = r  else { panic!() };
+        let r = match decoder.decode(&mut src) {
+            Ok(Some(CanFrame::Remote(r))) => r,
+            _ => panic!(""),
+        };
         assert_eq!(r.id(), Id::Standard(StandardId::new(10).unwrap()));
         assert_eq!(3, r.dlc());
     }
