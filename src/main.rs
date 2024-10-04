@@ -54,8 +54,8 @@ struct ListenArgs {
 
 async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> anyhow::Result<()> {
     let (tcp_read, tcp_write) = tcp_stream.split();
-    let mut tcp_reader = FramedRead::new(tcp_read, frame::CanFrameCodec {});
-    let mut tcp_writer = FramedWrite::new(tcp_write, frame::CanFrameCodec {});
+    let mut tcp_reader = FramedRead::new(tcp_read, frame::CanFrameCodec);
+    let mut tcp_writer = FramedWrite::new(tcp_write, frame::CanFrameCodec);
 
     loop {
         tokio::select! {
