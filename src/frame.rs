@@ -1,127 +1,75 @@
-use std::io::Cursor;
-use std::io::Read;
-
-use async_std::io::prelude::*;
-use bytes::Buf;
-use bytes::BytesMut;
-use libc::CAN_MAX_DLEN;
+use bytes::{Buf, BufMut, BytesMut};
 use socketcan::frame::IdFlags;
-use socketcan::CanFrame;
-use socketcan::Frame;
+use socketcan::{Frame, CanFrame, CanDataFrame, EmbeddedFrame};
+use tokio_util::codec::Decoder;
+use tokio_util::codec::Encoder;
 
-pub async fn read_frame<R>(
-    buf: &mut BytesMut,
-    stream: &mut R,
-) -> async_std::io::Result<Option<CanFrame>>
-where
-    R: futures::AsyncRead + Unpin,
-{
-    loop {
-        if let Some(frame) = parse_frame(buf)? {
-            return Ok(Some(frame));
-        }
+pub struct CanFrameCodec {}
 
-        if 0 == stream.read(buf).await? {
-            // The remote closed the connection. For this to be
-            // a clean shutdown, there should be no data in the
-            // read buffer. If there is, this means that the
-            // peer closed the socket while sending a frame.
-            if buf.is_empty() {
-                return Ok(None);
-            } else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "connection reset by peer",
-                ));
+impl Encoder<CanFrame> for CanFrameCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: CanFrame, dst: &mut BytesMut) -> Result<(), Self::Error> {
+
+        match item {
+            CanFrame::Data(d) => {
+                let len = d.len();
+                dst.reserve(5 + len);
+
+                dst.put_u32(d.id_word());
+                dst.put_u8(len as u8);
+
+                let data = d.data();
+                dst.extend_from_slice(data);
+                Ok(())
+            },
+
+            CanFrame::Remote(r) => {
+                let len = r.len();
+                dst.reserve(5);
+
+                dst.put_u32(r.id_word());
+                dst.put_u8(len as u8);
+                Ok(())
+            },
+
+            CanFrame::Error(e) => {
+                todo!()
             }
         }
+        
     }
 }
 
-pub async fn write_frame<W>(
-    stream: &mut W,
-    frame: impl socketcan::Frame,
-) -> async_std::io::Result<()>
-where
-    W: futures::AsyncWrite + Unpin,
-{
-    let data = frame.data();
-    let len = data.len() as u8;
-    stream.write_all(&[len]).await?;
-    stream.write_all(data).await?;
-    stream.write_all(&u32::to_be_bytes(frame.id_word())).await?;
-    stream.flush().await?;
-    Ok(())
-}
+impl Decoder for CanFrameCodec {
+    type Item = CanFrame;
+    type Error = std::io::Error;
 
-fn parse_frame(buf: &mut BytesMut) -> async_std::io::Result<Option<CanFrame>> {
-    let mut c = Cursor::new(&buf[..]);
-    if check_frame(&mut c) {
-        let mut data = [0_u8; CAN_MAX_DLEN];
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if src.len() < 5 {
+            return Ok(None);
+        }
 
-        c.set_position(0);
+        let mut id_bytes = [0_u8 ; 4];
+        id_bytes.copy_from_slice(&src[..4]);
+        let can_id = u32::from_be_bytes(id_bytes);
 
-        let len = c.get_u8() as usize;
-        let data = &mut data[..len];
-
-        c.read_exact(data)?;
-        let can_id = c.get_u32();
-
-        buf.advance(len + 5);
+        let len = src[4] as usize;
 
         let flags = IdFlags::from_bits_truncate(can_id);
         if flags.contains(IdFlags::RTR) {
-            return Ok(CanFrame::remote_from_raw_id(can_id, len));
+            src.advance(5);
+            Ok(CanFrame::remote_from_raw_id(can_id, len))
         } else {
-            return Ok(CanFrame::from_raw_id(can_id, data));
+            if src.len() < 5 + len {
+                // the full frame has not yet arrived
+                src.reserve(5 + len - src.len());
+                return Ok(None);
+            }
+            let data = &src[5..5+len];
+            let data_frame = CanFrame::from_raw_id(can_id, data);
+            src.advance(5 + len);
+            Ok(data_frame)
         }
-    }
-
-    Ok(None)
-}
-
-fn check_frame(src: &mut Cursor<&[u8]>) -> bool {
-    if src.has_remaining() == false {
-        return false;
-    }
-
-    let len = src.get_u8() as usize;
-    if src.remaining() < len + 4 {
-        return false;
-    }
-
-    true
-}
-
-#[cfg(test)]
-mod test {
-    use socketcan::StandardId;
-
-    use super::*;
-
-    #[test]
-    fn test_parse() {
-        let b = [3_u8, 1_u8, 2_u8, 3_u8, 0_u8, 0_u8, 0_u8, 10_u8];
-        let mut buf = BytesMut::from(&b[..]);
-        let r = parse_frame(&mut buf);
-        assert!(r.is_ok());
-        let r = r.unwrap();
-        assert!(r.is_some());
-        let r = r.unwrap();
-        assert_eq!(
-            r.id(),
-            socketcan::Id::Standard(StandardId::new(10).unwrap())
-        );
-    }
-
-    #[test]
-    fn parse_advances_buf() {
-        let b = [3_u8, 1_u8, 2_u8, 3_u8, 0_u8, 0_u8, 0_u8, 10_u8, 4_u8];
-        let mut buf = BytesMut::from(&b[..]);
-        let _r = parse_frame(&mut buf);
-        assert_eq!(buf.remaining(), 1);
-        let r = parse_frame(&mut buf);
-        assert!(r.is_ok());
-        assert!(r.unwrap().is_none());
     }
 }

@@ -1,13 +1,13 @@
+use futures::prelude::*;
+use futures::{StreamExt};
 use anyhow::Context;
-use async_std::net::TcpListener;
-use async_std::net::TcpStream;
-use async_std::prelude::*;
 use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
 use futures::pin_mut;
-use futures::prelude::*;
-use socketcan::async_std::CanSocket;
+use socketcan::tokio::CanSocket;
 use socketcan::{Frame, EmbeddedFrame};
+use tokio::net::{TcpStream, TcpListener};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use std::net::{SocketAddr, ToSocketAddrs};
 use tracing::{debug, error, info};
 
@@ -55,51 +55,46 @@ struct ListenArgs {
     socket: String,
 }
 
-async fn pump_frames(tcp_stream: TcpStream, can_socket: &CanSocket) -> anyhow::Result<()>
+async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> anyhow::Result<()>
 {
-    let (mut tcp_read, mut tcp_write) = tcp_stream.split();
-    let mut tcp_read_buf = BytesMut::with_capacity(1024);
+    let (tcp_read, tcp_write) = tcp_stream.split();
+    let mut tcp_reader = FramedRead::new(tcp_read, frame::CanFrameCodec {});
+    let mut tcp_writer = FramedWrite::new(tcp_write, frame::CanFrameCodec {});
 
     loop {
-        let can_rx = can_socket.read_frame().fuse();
-        let tcp_rx = frame::read_frame(&mut tcp_read_buf, &mut tcp_read).fuse();
-        pin_mut!(can_rx, tcp_rx);
 
-        futures::select! {
-            f = can_rx => {
+        tokio::select! {
+            f = can_socket.next() => {
                 match f {
-                    Ok(f) => {
+                    Some(Ok(f)) => {
                         debug!("CAN => TCP [{:x}]", f.id_word());
-                        if let Err(e) = frame::write_frame(&mut tcp_write, f).await {
+                        if let Err(e) = tcp_writer.send(f).await {
                             error!("error sending to TCP: {}", e);
                         }
-
                     }
-                    Err(e) => {
+
+                    Some(Err(e)) => {
                         error!("CAN io error: {}", e);
                     }
+
+                    None => todo!()
                 }
             },
 
-            f = tcp_rx => {
+            f = tcp_reader.next() => {
                 match f {
-                    Ok(Some(f)) => {
+                    Some(Ok(f)) => {
                         debug!("TCP => CAN [{:x}]", f.id_word());
-                        if let Err(e) = can_socket.write_frame(&f).await {
+                        if let Err(e) = can_socket.send(f).await {
                             error!("error sending frame: {}", e);
                         }
-                    },
-
-                    Ok(None) => {
-                        info!("remote peer closed connection");
-                        return Ok(());
                     }
 
-                    Err(e) => {
-                        error!("TCP error: {}", e);
-                        return Err(e.into());
+                    Some(Err(e)) => {
+                        error!("{}", e);
                     }
 
+                    None => todo!()
                 }
             }
         }
@@ -108,7 +103,7 @@ async fn pump_frames(tcp_stream: TcpStream, can_socket: &CanSocket) -> anyhow::R
 }
 
 async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
-    let can_socket = CanSocket::open(&cmd.interface)
+    let mut can_socket = CanSocket::open(&cmd.interface)
         .with_context(|| format!("CAN interface: {}", cmd.interface))?;
 
     let addrs: Vec<SocketAddr> = cmd
@@ -123,7 +118,7 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
 
     let tcp_stream = TcpStream::connect(socket).await?;
     info!("connected!");
-    pump_frames(tcp_stream, &can_socket).await?;
+    pump_frames(tcp_stream, &mut can_socket).await?;
 
     Ok(())
 }
@@ -152,7 +147,7 @@ fn create_vcan(name: &str) -> anyhow::Result<()>
 async fn listen(cmd: ListenArgs) -> anyhow::Result<()>
 {
 
-    let can_socket = match CanSocket::open(&cmd.interface) {
+    let mut can_socket = match CanSocket::open(&cmd.interface) {
         Ok(s) => s,
         Err(e) => {
             error!("unable to open CAN socket: {}: {}", cmd.interface, e);
@@ -167,7 +162,7 @@ async fn listen(cmd: ListenArgs) -> anyhow::Result<()>
         let (tcp_stream, addr) = tcp_listener.accept().await?;
         info!("incoming connection from: {}", addr);
 
-        pump_frames(tcp_stream, &can_socket).await?;
+        pump_frames(tcp_stream, &mut can_socket).await?;
     }
 
     Ok(())
@@ -188,9 +183,9 @@ fn main() -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     match cli.command {
-        Commands::Forward(cmd) => async_std::task::block_on(forward(cmd))?,
+        Commands::Forward(cmd) => futures::executor::block_on(forward(cmd))?,
 
-        Commands::Listen(cmd) => async_std::task::block_on(listen(cmd))?,
+        Commands::Listen(cmd) => futures::executor::block_on(listen(cmd))?,
     }
 
     Ok(())
