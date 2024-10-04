@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use socketcan::frame::IdFlags;
-use socketcan::{CanDataFrame, CanFrame, EmbeddedFrame, Frame};
+use socketcan::{CanFrame, EmbeddedFrame, Frame};
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 

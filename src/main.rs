@@ -1,7 +1,5 @@
 use anyhow::Context;
-use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
-use futures::pin_mut;
 use futures::prelude::*;
 use futures::StreamExt;
 use socketcan::tokio::CanSocket;
