@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use socketcan::frame::IdFlags;
-use socketcan::{Frame, CanFrame, CanDataFrame, EmbeddedFrame};
+use socketcan::{CanDataFrame, CanFrame, EmbeddedFrame, Frame};
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
@@ -10,7 +10,6 @@ impl Encoder<CanFrame> for CanFrameCodec {
     type Error = std::io::Error;
 
     fn encode(&mut self, item: CanFrame, dst: &mut BytesMut) -> Result<(), Self::Error> {
-
         match item {
             CanFrame::Data(d) => {
                 let len = d.len();
@@ -22,7 +21,7 @@ impl Encoder<CanFrame> for CanFrameCodec {
                 let data = d.data();
                 dst.extend_from_slice(data);
                 Ok(())
-            },
+            }
 
             CanFrame::Remote(r) => {
                 let len = r.len();
@@ -31,13 +30,12 @@ impl Encoder<CanFrame> for CanFrameCodec {
                 dst.put_u32(r.id_word());
                 dst.put_u8(len as u8);
                 Ok(())
-            },
+            }
 
             CanFrame::Error(e) => {
                 todo!()
             }
         }
-        
     }
 }
 
@@ -50,7 +48,7 @@ impl Decoder for CanFrameCodec {
             return Ok(None);
         }
 
-        let mut id_bytes = [0_u8 ; 4];
+        let mut id_bytes = [0_u8; 4];
         id_bytes.copy_from_slice(&src[..4]);
         let can_id = u32::from_be_bytes(id_bytes);
 
@@ -66,7 +64,7 @@ impl Decoder for CanFrameCodec {
                 src.reserve(5 + len - src.len());
                 return Ok(None);
             }
-            let data = &src[5..5+len];
+            let data = &src[5..5 + len];
             let data_frame = CanFrame::from_raw_id(can_id, data);
             src.advance(5 + len);
             Ok(data_frame)

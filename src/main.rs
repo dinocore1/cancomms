@@ -1,14 +1,14 @@
-use futures::prelude::*;
-use futures::{StreamExt};
 use anyhow::Context;
 use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
 use futures::pin_mut;
+use futures::prelude::*;
+use futures::StreamExt;
 use socketcan::tokio::CanSocket;
-use socketcan::{Frame, EmbeddedFrame};
-use tokio::net::{TcpStream, TcpListener};
-use tokio_util::codec::{FramedRead, FramedWrite};
+use socketcan::{EmbeddedFrame, Frame};
 use std::net::{SocketAddr, ToSocketAddrs};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info};
 
 mod frame;
@@ -45,7 +45,6 @@ struct ForwardCmd {
 
 #[derive(Args)]
 struct ListenArgs {
-
     /// CAN interface
     #[arg(short, long, default_value = "vcan0")]
     interface: String,
@@ -55,14 +54,12 @@ struct ListenArgs {
     socket: String,
 }
 
-async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> anyhow::Result<()>
-{
+async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> anyhow::Result<()> {
     let (tcp_read, tcp_write) = tcp_stream.split();
     let mut tcp_reader = FramedRead::new(tcp_read, frame::CanFrameCodec {});
     let mut tcp_writer = FramedWrite::new(tcp_write, frame::CanFrameCodec {});
 
     loop {
-
         tokio::select! {
             f = can_socket.next() => {
                 match f {
@@ -99,7 +96,6 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
             }
         }
     }
-
 }
 
 async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
@@ -123,8 +119,7 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_vcan(name: &str) -> anyhow::Result<()>
-{
+fn create_vcan(name: &str) -> anyhow::Result<()> {
     std::process::Command::new("ip")
         .arg("link")
         .arg("add")
@@ -144,9 +139,7 @@ fn create_vcan(name: &str) -> anyhow::Result<()>
     Ok(())
 }
 
-async fn listen(cmd: ListenArgs) -> anyhow::Result<()>
-{
-
+async fn listen(cmd: ListenArgs) -> anyhow::Result<()> {
     let mut can_socket = match CanSocket::open(&cmd.interface) {
         Ok(s) => s,
         Err(e) => {
