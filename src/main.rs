@@ -118,7 +118,7 @@ async fn forward(cmd: ForwardCmd) -> anyhow::Result<()> {
 }
 
 fn create_vcan(name: &str) -> anyhow::Result<()> {
-    info!("try creating a new vcan interface with: \n$ link add dev {name}\n$ link set {name} up");
+    info!("try creating a new vcan interface with: \n$ ip link add dev {name} type vcan\n$ ip link set {name} up");
     std::process::Command::new("ip")
         .arg("link")
         .arg("add")
@@ -160,7 +160,8 @@ async fn listen(cmd: ListenArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let logging_level = match cli.verbose {
@@ -175,9 +176,9 @@ fn main() -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     match cli.command {
-        Commands::Forward(cmd) => futures::executor::block_on(forward(cmd))?,
+        Commands::Forward(cmd) => forward(cmd).await?,
 
-        Commands::Listen(cmd) => futures::executor::block_on(listen(cmd))?,
+        Commands::Listen(cmd) => listen(cmd).await?,
     }
 
     Ok(())
