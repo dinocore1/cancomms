@@ -19,7 +19,7 @@ impl Encoder<CanFrame> for CanFrameCodec {
                 dst.put_u8(len as u8);
 
                 let data = d.data();
-                dst.put_slice(data);
+                dst.extend_from_slice(data);
                 Ok(())
             }
 

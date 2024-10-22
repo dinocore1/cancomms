@@ -97,7 +97,7 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
                         if let Err(e) = can_socket.flush().await {
                             error!("error flushing CAN socket: {}", e);
                         }
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        // tokio::time::sleep(Duration::from_millis(10)).await;
                     }
 
                     Some(Err(e)) => {
