@@ -71,6 +71,9 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
                         if let Err(e) = tcp_writer.send(f).await {
                             error!("error sending to TCP: {}", e);
                         }
+                        if let Err(e) = tcp_writer.flush().await {
+                            error!("error flushing TCP: {}", e);
+                        }
                     }
 
                     Some(Err(e)) => {
@@ -90,6 +93,9 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
                         }
                         if let Err(e) = can_socket.send(f).await {
                             error!("error sending frame: {}", e);
+                        }
+                        if let Err(e) = can_socket.flush().await {
+                            error!("error flushing CAN socket: {}", e);
                         }
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     }
