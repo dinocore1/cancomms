@@ -65,15 +65,14 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
                     Some(Ok(f)) => {
                         // debug!("CAN => TCP [{:x}]", f.id_word());
                         if f.id_word() == 0x520 || f.id_word() == 0x5a0 {
-                            debug!("CAN => TCP UDS {:02x?} DATA {:02x?}", f.id_word(), f.data());
+                            // debug!("CAN => TCP UDS {:02x?} DATA {:02x?}", f.id_word(), f.data());
+                            if let Err(e) = tcp_writer.send(f).await {
+                                error!("error sending to TCP: {}", e);
+                            }
                         }
                         
-                        if let Err(e) = tcp_writer.send(f).await {
-                            error!("error sending to TCP: {}", e);
-                        }
-                        if let Err(e) = tcp_writer.flush().await {
-                            error!("error flushing TCP: {}", e);
-                        }
+                        
+                        
                     }
 
                     Some(Err(e)) => {
@@ -87,16 +86,15 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
             f = tcp_reader.next() => {
                 match f {
                     Some(Ok(f)) => {
-                        // debug!("TCP => CAN [{:x}]", f.id_word());
+                        // debug!("CAN <= TCP [{:x}]", f.id_word());
                         if f.id_word() == 0x520 || f.id_word() == 0x5a0 {
-                            debug!("TCP => CAN UDS {:02x?} DATA {:02x?}", f.id_word(), f.data());
+                            // debug!("CAN <= TCP UDS {:02x?} DATA {:02x?}", f.id_word(), f.data());
+                            if let Err(e) = can_socket.send(f).await {
+                                error!("error sending frame: {}", e);
+                            }
                         }
-                        if let Err(e) = can_socket.send(f).await {
-                            error!("error sending frame: {}", e);
-                        }
-                        if let Err(e) = can_socket.flush().await {
-                            error!("error flushing CAN socket: {}", e);
-                        }
+                        
+                        
                         // tokio::time::sleep(Duration::from_millis(10)).await;
                     }
 
