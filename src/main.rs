@@ -5,6 +5,7 @@ use futures::StreamExt;
 use socketcan::tokio::CanSocket;
 use socketcan::{EmbeddedFrame, Frame};
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info};
@@ -90,6 +91,7 @@ async fn pump_frames(mut tcp_stream: TcpStream, can_socket: &mut CanSocket) -> a
                         if let Err(e) = can_socket.send(f).await {
                             error!("error sending frame: {}", e);
                         }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
                     }
 
                     Some(Err(e)) => {
